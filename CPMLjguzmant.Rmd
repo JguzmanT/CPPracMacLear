@@ -1,0 +1,131 @@
+---
+title: "Qualifying workout correctness through Fitness Tracking hardware"
+author: "jguzmant"
+date: "6/24/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE, cache=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+Wearable tracking devices are being used a lot more in our society, from athletes to common people, and they use it, many of them not just to now the time but to measure their daily activity.
+
+Given these, a lot of applications help them to track and improve gaining more motivation to continue with it. Eventhough, not many applications feeds the user on how is working out, that way it can improve its technique or looking for professional advice from trainers.
+
+```{r }
+library(caret)
+
+
+options(warn=-1)
+set.seed(13331)
+
+if(file.exists("pml-training.csv"))
+ WorkOutDF <- read.csv("pml-training.csv")
+dim(WorkOutDF)
+str(WorkOutDF)
+
+```
+
+## Exploratory anaysis 
+
+First we have to analyze how the variables are and if they have missing data.
+
+```{r , echo=FALSE}
+CompleteRecords <- complete.cases(WorkOutDF)
+
+```
+
+The set has 160 variables but many of them have NAs on most of its values, since only **460** are complete records, so, it is time to get rid of those NAs. I will keep in this step just the variables with no NAs.
+
+
+```{r}
+TrainSet <- WorkOutDF[,colSums(is.na(WorkOutDF))==0]
+
+```
+
+Though **93** variables look good, it is time to look to its features again to find out if there is something else to prone. All variables should be numeric, and in the summary they seemed to have some character ones.  
+
+```{r}
+out =NULL; 
+for(i in 1:92){ 
+    if(is.character(TrainSet[,i]))
+        out <- rbind(out,i)
+    }
+
+summary(as.numeric(TrainSet[,12]))
+```
+
+It turned out that **36** features have **19** thousand records with a "#DIV/0" character, that being said, 95% of the values are not available, so i remove them too. Finally, the first 4 features are not useful too, they have data related to the people being tested
+
+```{r}
+
+TrainSet <- TrainSet[,-out]
+TrainSet <- TrainSet[,-c(1:4)]
+
+```
+## Training Phase
+
+Now i proceed to select a first **Train Set** to apply several Machine Learning Algorithms and select the best of them based on the outcome.
+
+```{r}
+
+SS_Train <- createDataPartition(y=TrainSet$classe,p=0.20,list=FALSE)
+
+inTrain <- TrainSet[SS_Train,]
+inTest <- TrainSet[-SS_Train,]
+
+```
+
+Once the **Train Set** is selected, i choose to apply three different training methods, Gradient Boosting Machines, Random Forest, and Naive Bayes. 
+
+```{r}
+
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+
+modRF1 <- train(classe ~ ., data=inTrain, method="rf", trControl=controlRF)
+
+modGBM <- train(classe ~ ., data=inTrain, method="gbm", trControl=controlGBM,verbose=FALSE)
+
+modNB <- train(classe~.,method="nb",trControl = controlGBM,data=inTrain)
+
+predictRF1 <- predict(modRF1, newdata=inTest[,-53])
+confusionMatrix(predictRF1, factor(inTest$classe))
+
+predictGBM1 <- predict(modGBM, newdata=inTest[,-53])
+confusionMatrix(predictGBM1, factor(inTest$classe))
+
+predictNB1 <- predict(modNB, newdata=inTest[,-53])
+confusionMatrix(predictNB1, factor(inTest$classe))
+
+```
+Here, our winning model for the small Train set is **Random Forest**, incorrectly classifying 296 objects versus 782 of the **GBM** and 4751 of **Naive Bayes**.
+
+```{r}
+SS_Train2 <- createDataPartition(y=TrainSet$classe,p=0.70,list=FALSE)
+inTrain2 <- TrainSet[SS_Train2,]
+inTest2 <- TrainSet[-SS_Train2,]
+control <- trainControl(method = "cv", number = 5)
+modelrf2 <- train(classe~.,method="rf",trControl = control,data=inTrain2,verbose=FALSE)
+predictrf2 <- predict(modelrf2, newdata=inTest2[,-53])
+confusionMatrix(predictrf2, factor(inTest2$classe))
+```
+
+It can be seen that Random Forest performs very well for this Data Set, having just 23 False positive cases. 
+
+## Test Set
+
+After all the process and training/validating phases, i apply the resulting model to the actual testing set.
+
+```{r}
+WOTestS <- read.csv("pml-testing.csv")
+
+predictRFT2 <- predict(modelrf2, newdata=WOTestS)
+
+predictRFT2
+
+```
